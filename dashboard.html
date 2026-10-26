@@ -1,0 +1,320 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SkillSphere AI - Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
+  </style>
+</head>
+
+<body class="min-h-screen bg-[#F4F6F9] text-slate-800">
+
+<header class="bg-[#2B2D6E] text-white px-6 py-4 flex justify-between items-center">
+  <h1 class="font-extrabold text-xl">SkillSphere AI</h1>
+  <div class="flex items-center gap-4 text-sm">
+    <span id="who"></span>
+    <button onclick="logout()" class="bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg">Log out</button>
+  </div>
+</header>
+
+<main class="max-w-4xl mx-auto p-6 space-y-6">
+
+  <section id="postBox" class="hidden bg-white border border-slate-200 rounded-xl p-6">
+    <h2 class="font-bold text-lg mb-4">Post a project</h2>
+
+    <div class="grid sm:grid-cols-2 gap-3">
+      <input id="pTitle" placeholder="Project title" class="border border-slate-300 rounded-lg px-3 py-2">
+      <input id="pBudget" type="number" placeholder="Budget in rupees" class="border border-slate-300 rounded-lg px-3 py-2">
+      <input id="pDeadline" type="date" class="border border-slate-300 rounded-lg px-3 py-2">
+      <textarea id="pDesc" placeholder="What work do you need done?" class="sm:col-span-2 border border-slate-300 rounded-lg px-3 py-2"></textarea>
+    </div>
+
+    <button onclick="postProject()" class="mt-4 bg-[#2B2D6E] text-white font-bold px-5 py-2 rounded-lg">
+      Post project
+    </button>
+    <p id="pMsg" class="text-sm mt-2"></p>
+  </section>
+
+  <section>
+    <h2 id="listTitle" class="font-bold text-lg mb-3"></h2>
+    <div id="list" class="space-y-4"></div>
+  </section>
+
+  <section class="bg-white border border-slate-200 rounded-xl p-6">
+    <h2 class="font-bold text-lg mb-2">My Skills</h2>
+    <p class="text-sm text-slate-600 mb-3">
+      Add your skills so clients can find the best match for you.
+    </p>
+
+    <input
+      id="skillsInput"
+      type="text"
+      placeholder="HTML, CSS, JavaScript, Python"
+      class="w-full border border-slate-300 rounded-lg px-3 py-2"
+    >
+
+    <button
+      onclick="saveSkills()"
+      class="mt-3 bg-[#2B2D6E] hover:bg-[#23255a] text-white font-bold px-5 py-2 rounded-lg"
+    >
+      Save Skills
+    </button>
+
+    <p id="skillsMessage" class="text-sm mt-3"></p>
+  </section>
+
+</main>
+
+<script>
+  const token = localStorage.getItem('token');
+  const role = localStorage.getItem('role');
+
+  if (!token) {
+    location.href = 'login.html';
+  }
+
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;'
+  }[c]));
+
+  function logout() {
+    localStorage.clear();
+    location.href = 'login.html';
+  }
+
+  async function api(url, method = 'GET', body) {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+
+    const data = await res.json();
+
+    if (res.status === 401) {
+      logout();
+    }
+
+    return { ok: res.ok, data };
+  }
+
+  function clientBox(p) {
+    return `
+      <a href="project.html?id=${p.project_id}"
+         class="inline-block mt-3 text-sm font-medium text-[#2B2D6E] underline">
+        Open project
+      </a>
+      <span class="text-xs text-slate-500 ml-3">
+        Status: ${esc(p.status)}
+      </span>`;
+  }
+
+  function freelancerBox(p) {
+    if (p.status !== 'open') {
+      return `
+        <a href="project.html?id=${p.project_id}"
+           class="inline-block mt-3 text-sm font-medium text-[#1F9D78] underline">
+          You were selected. Open project
+        </a>`;
+    }
+
+    return `
+      <div class="mt-4 grid sm:grid-cols-4 gap-2">
+        <input id="bid-${p.project_id}" type="number"
+          placeholder="Your bid (₹)"
+          class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+
+        <input id="cl-${p.project_id}"
+          placeholder="Short cover letter"
+          class="sm:col-span-2 border border-slate-300 rounded-lg px-3 py-2 text-sm">
+
+        <button onclick="sendProposal(${p.project_id})"
+          class="bg-[#1F9D78] text-white font-bold rounded-lg text-sm py-2">
+          Send proposal
+        </button>
+      </div>
+      <p id="msg-${p.project_id}" class="text-sm mt-2"></p>`;
+  }
+
+  async function loadProjects() {
+    const { ok, data } = await api('/api/projects');
+    if (!ok) return;
+
+    const list = document.getElementById('list');
+
+    if (!Array.isArray(data) || !data.length) {
+      list.innerHTML = '<p class="text-slate-500">' +
+        (role === 'client'
+          ? 'No projects yet. Post your first one above.'
+          : 'No open projects right now.') +
+        '</p>';
+      return;
+    }
+
+    list.innerHTML = data.map(p => `
+      <div class="bg-white border border-slate-200 rounded-xl p-5">
+        <div class="flex justify-between gap-4">
+          <h3 class="font-bold">${esc(p.title)}</h3>
+          <span class="font-bold text-[#1F9D78]">₹${esc(p.budget)}</span>
+        </div>
+        <p class="text-sm text-slate-600 mt-1">${esc(p.description)}</p>
+        <p class="text-xs text-slate-500 mt-2">
+          Deadline: ${esc(p.deadline || 'Not set')}
+        </p>
+        ${role === 'client' ? clientBox(p) : freelancerBox(p)}
+      </div>`).join('');
+  }
+
+  async function postProject() {
+    const pMsg = document.getElementById('pMsg');
+
+    const { ok, data } = await api('/api/projects', 'POST', {
+      title: document.getElementById('pTitle').value,
+      budget: document.getElementById('pBudget').value,
+      deadline: document.getElementById('pDeadline').value,
+      description: document.getElementById('pDesc').value
+    });
+
+    pMsg.className = 'text-sm mt-2 ' +
+      (ok ? 'text-[#1F9D78]' : 'text-red-600');
+    pMsg.textContent = ok ? data.message : data.error;
+
+    if (ok) {
+      ['pTitle', 'pBudget', 'pDeadline', 'pDesc'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+
+      const r = await api('/api/trust');
+      if (r.ok) {
+        document.getElementById('who').textContent +=
+          ' | Trust score: ' + r.data.score;
+      }
+
+      loadProjects();
+    }
+  }
+
+  async function sendProposal(id) {
+    const m = document.getElementById('msg-' + id);
+
+    const { ok, data } = await api('/api/proposals', 'POST', {
+      project_id: id,
+      bid_amount: document.getElementById('bid-' + id).value,
+      cover_letter: document.getElementById('cl-' + id).value
+    });
+
+    m.className = 'text-sm mt-2 ' +
+      (ok ? 'text-[#1F9D78]' : 'text-red-600');
+    m.textContent = ok ? data.message : data.error;
+  }
+
+  async function showProposals(id) {
+    const { data } = await api('/api/projects/' + id + '/proposals');
+    const box = document.getElementById('prop-' + id);
+
+    if (!box) return;
+
+    box.innerHTML = data.length ? data.map(x => `
+      <div class="border-t border-slate-200 pt-3 mt-3 text-sm">
+        <p class="font-medium">
+          Freelancer #${x.freelancer_id}
+          <span class="text-slate-500">(identity hidden)</span>
+          bid ₹${esc(x.bid_amount)}
+        </p>
+        <p class="text-slate-600">${esc(x.cover_letter)}</p>
+      </div>`).join('') :
+      '<p class="text-sm text-slate-500 mt-3">No proposals yet.</p>';
+  }
+
+  document.getElementById('who').textContent =
+    (localStorage.getItem('name') || 'User') + ' (' + role + ')';
+
+  if (role === 'client') {
+    document.getElementById('postBox').classList.remove('hidden');
+  }
+
+  document.getElementById('listTitle').textContent =
+    role === 'client' ? 'Your projects' : 'Open projects';
+
+  loadProjects();
+
+  api('/api/trust').then(r => {
+    if (r.ok) {
+      document.getElementById('who').textContent +=
+        ' | Trust score: ' + r.data.score;
+    }
+  });
+
+  // Load saved skills using the login token
+  async function loadSkills() {
+    const r = await fetch('/api/profile', {
+      headers: {
+        'Authorization': 'Bearer ' + token
+      }
+    });
+
+    const data = await r.json();
+
+    if (r.status === 401) {
+      logout();
+      return;
+    }
+
+    if (r.ok && data.skills) {
+      document.getElementById('skillsInput').value = data.skills;
+    }
+  }
+
+  // Save skills using the login token
+  async function saveSkills() {
+    const skills = document.getElementById('skillsInput').value.trim();
+    const message = document.getElementById('skillsMessage');
+
+    if (!skills) {
+      message.className = 'text-sm mt-3 text-red-600';
+      message.textContent = 'Please enter at least one skill.';
+      return;
+    }
+
+    try {
+      const r = await fetch('/api/profile/skills', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({ skills })
+      });
+
+      const data = await r.json();
+
+      if (r.status === 401) {
+        logout();
+        return;
+      }
+
+      message.className = 'text-sm mt-3 ' +
+        (r.ok ? 'text-[#1F9D78]' : 'text-red-600');
+      message.textContent = data.message || data.error || 'Request failed.';
+    } catch (error) {
+      message.className = 'text-sm mt-3 text-red-600';
+      message.textContent = 'Could not connect to the server.';
+    }
+  }
+
+  loadSkills();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SkillSphere AI - Project</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <style>body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }</style>
+</head>
+<body class="min-h-screen bg-[#F4F6F9] text-slate-800">
+  <header class="bg-[#2B2D6E] text-white px-6 py-4 flex justify-between items-center">
+    <h1 class="font-extrabold text-xl">SkillSphere AI</h1>
+    <a href="dashboard.html" class="bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg text-sm">Back to dashboard</a>
+  </header>
+
+  <main class="max-w-4xl mx-auto p-6 space-y-6">
+    <section id="info" class="bg-white border border-slate-200 rounded-xl p-6"></section>
+
+    <section id="propBox" class="hidden bg-white border border-slate-200 rounded-xl p-6">
+      <h2 class="font-bold text-lg mb-2">Proposals (freelancer identity hidden)</h2>
+      <div id="props"></div>
+    </section>
+
+    <section id="addBox" class="hidden bg-white border border-slate-200 rounded-xl p-6">
+      <h2 class="font-bold text-lg mb-4">Add a milestone</h2>
+      <div class="grid sm:grid-cols-3 gap-3">
+        <input id="mTitle" placeholder="Milestone title" class="border border-slate-300 rounded-lg px-3 py-2">
+        <input id="mAmount" type="number" placeholder="Amount (₹)" class="border border-slate-300 rounded-lg px-3 py-2">
+        <input id="mCriteria" placeholder="What must be delivered?" class="border border-slate-300 rounded-lg px-3 py-2">
+      </div>
+      <button onclick="addMilestone()" class="mt-4 bg-[#2B2D6E] text-white font-bold px-5 py-2 rounded-lg">Create and hold payment in escrow</button>
+      <p id="mMsg" class="text-sm mt-2"></p>
+    </section>
+
+    <section>
+      <h2 class="font-bold text-lg mb-3">Milestones</h2>
+      <div id="miles" class="space-y-4"></div>
+    </section>
+<section class="card">
+  <h2>Skill Match
+    <section class="card">
+  <h2>Project Chat</h2>
+
+  <div id="chatBox" style="max-height:300px; overflow-y:auto; margin-bottom:10px;">
+    Loading messages...
+  </div>
+
+  <input
+    id="chatMessage"
+    type="text"
+    placeholder="Type your message..."
+  >
+
+  <button onclick="sendMessage()">Send</button>
+
+  <p id="chatStatus"></p>
+</section>
+  </h2>
+  <p>Freelancers are ranked based on required skills and trust score.</p>
+
+  <div id="skillMatches">
+    Loading matches...
+  </div>
+</section>
+ <section class="card">
+  <h2>Dispute & AI Mediation</h2>
+
+  <input
+    id="disputeReason"
+    type="text"
+    placeholder="Enter dispute reason..."
+  >
+
+  <button onclick="raiseDispute()">Raise Dispute</button>
+
+  <p id="disputeStatus"></p>
+
+  <div id="disputeResult"></div>
+</section> 
+</main>
+
+  <script>
+    const token = localStorage.getItem('token');
+    const role = localStorage.getItem('role');
+    if (!token) location.href = 'login.html';
+    const pid = new URLSearchParams(location.search).get('id');
+
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+    async function api(url, method = 'GET', body) {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      const data = await res.json();
+      if (res.status === 401) { localStorage.clear(); location.href = 'login.html'; }
+      return { ok: res.ok, data };
+    }
+
+    const label = {
+      funded: 'Payment held in escrow',
+      submitted: 'Waiting for client review',
+      revision: 'Revision requested',
+      approved: 'Approved. Payment released'
+    };
+
+    function aiLine(m) {
+      if (!m.ai_result) return '';
+      return '<p class="text-sm mt-2"><b>AI check:</b> ' + esc(m.ai_result) +
+             ' (' + esc(m.ai_score) + '% of required points found)</p>';
+    }
+
+    function submissionLine(m) {
+      if (!m.submission) return '';
+      return '<p class="text-sm bg-slate-50 border border-slate-200 rounded-lg p-3 mt-2">' + esc(m.submission) + '</p>';
+    }
+
+    function actions(m) {
+      if (role === 'freelancer' && (m.status === 'funded' || m.status === 'revision')) {
+        return '<textarea id="work-' + m.milestone_id + '" placeholder="Describe or paste your completed work" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mt-3"></textarea>' +
+               '<button onclick="submitWork(' + m.milestone_id + ')" class="mt-2 bg-[#1F9D78] text-white font-bold px-4 py-2 rounded-lg text-sm">Submit work</button>';
+      }
+      if (role === 'client' && m.status === 'submitted') {
+        return '<div class="mt-3 flex gap-2">' +
+               '<button onclick="review(' + m.milestone_id + ', \'approve\')" class="bg-[#1F9D78] text-white font-bold px-4 py-2 rounded-lg text-sm">Approve and release payment</button>' +
+               '<button onclick="review(' + m.milestone_id + ', \'revise\')" class="border border-slate-300 font-medium px-4 py-2 rounded-lg text-sm">Request revision</button>' +
+               '</div>';
+      }
+      return '';
+    }
+
+    function milestoneCard(m) {
+      return '<div class="bg-white border border-slate-200 rounded-xl p-5">' +
+        '<div class="flex justify-between gap-4">' +
+          '<h3 class="font-bold">' + esc(m.title) + '</h3>' +
+          '<span class="font-bold text-[#1F9D78]">₹' + esc(m.amount) + '</span>' +
+        '</div>' +
+        '<p class="text-sm text-slate-600 mt-1">Deliverable: ' + esc(m.criteria) + '</p>' +
+        '<p class="text-sm font-medium mt-2">' + label[m.status] + '</p>' +
+        submissionLine(m) +
+        aiLine(m) +
+        actions(m) +
+      '</div>';
+    }
+
+    async function load() {
+      const { ok, data } = await api('/api/projects/' + pid);
+      if (!ok) { document.getElementById('info').textContent = data.error; return; }
+      const p = data.project;
+
+      document.getElementById('info').innerHTML =
+        '<h2 class="text-xl font-bold">' + esc(p.title) + '</h2>' +
+        '<p class="text-slate-600 mt-1">' + esc(p.description) + '</p>' +
+        '<p class="text-sm mt-3">Budget: <b>₹' + esc(p.budget) + '</b> &nbsp; Status: <b>' + esc(p.status) + '</b></p>';
+
+      const showProps = role === 'client' && p.status === 'open';
+      document.getElementById('propBox').classList.toggle('hidden', !showProps);
+      document.getElementById('addBox').classList.toggle('hidden', !(role === 'client' && p.status === 'in_progress'));
+      if (showProps) loadProposals();
+
+      const box = document.getElementById('miles');
+      box.innerHTML = data.milestones.length
+        ? data.milestones.map(milestoneCard).join('')
+        : '<p class="text-slate-500">No milestones yet.</p>';
+    }
+
+    async function loadProposals() {
+      const { data } = await api('/api/projects/' + pid + '/proposals');
+      document.getElementById('props').innerHTML = data.length ? data.map(x =>
+        '<div class="border-t border-slate-200 pt-3 mt-3 text-sm">' +
+          '<p class="font-medium">Freelancer #' + x.freelancer_id + ' (trust score ' + x.trust + '/100) bid ₹' + esc(x.bid_amount) + '</p>' +
+          '<p class="text-slate-600">' + esc(x.cover_letter) + '</p>' +
+          '<button onclick="accept(' + x.proposal_id + ')" class="mt-2 bg-[#2B2D6E] text-white font-medium px-4 py-1.5 rounded-lg">Select this freelancer</button>' +
+        '</div>').join('') : '<p class="text-sm text-slate-500">No proposals yet.</p>';
+    }
+
+    async function accept(id) { await api('/api/proposals/' + id + '/accept', 'POST'); load(); }
+
+    async function addMilestone() {
+      const m = document.getElementById('mMsg');
+      const { ok, data } = await api('/api/projects/' + pid + '/milestones', 'POST', {
+        title: document.getElementById('mTitle').value,
+        amount: document.getElementById('mAmount').value,
+        criteria: document.getElementById('mCriteria').value
+      });
+      m.className = 'text-sm mt-2 ' + (ok ? 'text-[#1F9D78]' : 'text-red-600');
+      m.textContent = ok ? data.message : data.error;
+      if (ok) {
+        ['mTitle', 'mAmount', 'mCriteria'].forEach(i => document.getElementById(i).value = '');
+        load();
+      }
+    }
+
+    async function submitWork(id) {
+      await api('/api/milestones/' + id + '/submit', 'POST', { work: document.getElementById('work-' + id).value });
+      load();
+    }
+
+    async function review(id, decision) {
+      await api('/api/milestones/' + id + '/review', 'POST', { decision });
+      load();
+    }
+
+    load();
+  </script>
+<script>
+async function loadSkillMatches() {
+  const projectId = new URLSearchParams(window.location.search).get('id');
+
+  if (!projectId) return;
+
+  const r = await fetch(`/api/projects/${projectId}/proposals`);
+  const data = await r.json();
+
+  const box = document.getElementById('skillMatches');
+
+  if (!Array.isArray(data) || data.length === 0) {
+    box.textContent = 'No proposals available yet.';
+    return;
+  }
+
+  box.innerHTML = data.map(p => `
+    <div class="card">
+      <h3>Freelancer</h3>
+      <p>Skill Match: ${p.match}%</p>
+      <p>Trust Score: ${p.trust}</p>
+      <p>Overall Rank: ${p.rank}</p>
+    </div>
+  `).join('');
+}
+
+loadSkillMatches();
+</script><script>
+async function loadChat() {
+  const projectId = new URLSearchParams(window.location.search).get('id');
+
+  if (!projectId) return;
+
+ const r = await fetch(`/api/projects/${projectId}/messages`, {
+  headers: {
+    'Authorization': 'Bearer ' + localStorage.getItem('token')
+  }
+});
+  const messages = await r.json();
+
+  const box = document.getElementById('chatBox');
+
+  if (!Array.isArray(messages) || messages.length === 0) {
+    box.textContent = 'No messages yet.';
+    return;
+  }
+
+  box.innerHTML = messages.map(m => `
+    <div style="padding:8px; border-bottom:1px solid #ddd;">
+      <strong>${m.sender_name || 'User'}</strong>
+      <p>${m.message}</p>
+    </div>
+  `).join('');
+}
+
+
+async function sendMessage() {
+  const projectId = new URLSearchParams(window.location.search).get('id');
+  const input = document.getElementById('chatMessage');
+  const message = input.value.trim();
+
+  if (!message) return;
+
+  const r = await fetch(`/api/projects/${projectId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + localStorage.getItem('token')
+    },
+    body: JSON.stringify({ message })
+  });
+
+  const data = await r.json();
+
+  const status = document.getElementById('chatStatus');
+
+status.textContent = data.message || data.error || '';
+
+if (data.scopeFlag) {
+  status.textContent += ' ⚠️ Scope Creep Warning: Extra work detected.';
+}
+  input.value = '';
+  loadChat();
+}
+async function raiseDispute() {
+  const reason = document.getElementById('disputeReason').value.trim();
+
+  if (!reason) return;
+
+  const projectId = new URLSearchParams(window.location.search).get('id');
+
+  const r = await fetch(`/api/projects/${projectId}/dispute`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + localStorage.getItem('token')
+    },
+    body: JSON.stringify({ reason })
+  });
+
+  const data = await r.json();
+
+  document.getElementById('disputeStatus').textContent =
+    data.message || data.error || '';
+
+  if (data.summary || data.suggestion) {
+    document.getElementById('disputeResult').innerHTML = `
+      <p><strong>AI Summary:</strong> ${data.summary || ''}</p>
+      <p><strong>AI Suggestion:</strong> ${data.suggestion || ''}</p>
+    `;
+  }
+}
+loadChat();
+</script></body>
+</html>

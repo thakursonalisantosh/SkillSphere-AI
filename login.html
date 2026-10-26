@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SkillSphere AI - Login</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
+    .tab-on { background: #2B2D6E; color: #fff; }
+    input:focus, select:focus { outline: 2px solid #1F9D78; outline-offset: 1px; }
+  </style>
+</head>
+<body class="min-h-screen bg-[#F4F6F9] text-slate-800">
+  <div class="min-h-screen grid md:grid-cols-2">
+
+    <!-- Left: what the platform does -->
+    <section class="bg-[#2B2D6E] text-white p-8 md:p-14 flex flex-col justify-center">
+      <h1 class="text-4xl md:text-5xl font-extrabold leading-tight">SkillSphere AI</h1>
+      <p class="mt-4 text-lg text-indigo-100 max-w-md">Hire and get hired on skill alone. Payment stays safe until the work is done.</p>
+      <ul class="mt-10 space-y-5 max-w-md">
+        <li class="border-l-4 border-[#1F9D78] pl-4">
+          <p class="font-bold">Payment held in escrow</p>
+          <p class="text-indigo-200 text-sm">Money is released only after the client approves each milestone.</p>
+        </li>
+        <li class="border-l-4 border-[#1F9D78] pl-4">
+          <p class="font-bold">AI checks the work</p>
+          <p class="text-indigo-200 text-sm">Submitted files are matched against the milestone criteria.</p>
+        </li>
+        <li class="border-l-4 border-[#1F9D78] pl-4">
+          <p class="font-bold">Blind matching</p>
+          <p class="text-indigo-200 text-sm">Name, gender and photo stay hidden. Only skills decide.</p>
+        </li>
+      </ul>
+    </section>
+
+    <!-- Right: login / register -->
+    <section class="p-6 md:p-14 flex items-center justify-center">
+      <div class="w-full max-w-md bg-white rounded-xl border border-slate-200 p-8">
+
+        <div class="flex gap-2 bg-slate-100 rounded-lg p-1 mb-6">
+          <button id="tabLogin" class="tab-on flex-1 py-2 rounded-md font-medium text-sm">Log in</button>
+          <button id="tabReg" class="flex-1 py-2 rounded-md font-medium text-sm text-slate-600">Create account</button>
+        </div>
+
+        <form id="authForm" class="space-y-4">
+          <div id="nameBox" class="hidden">
+            <label class="block text-sm font-medium mb-1" for="name">Full name</label>
+            <input id="name" type="text" placeholder="Your name" class="w-full border border-slate-300 rounded-lg px-3 py-2">
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium mb-1" for="email">Email</label>
+            <input id="email" type="email" required placeholder="you@example.com" class="w-full border border-slate-300 rounded-lg px-3 py-2">
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium mb-1" for="password">Password</label>
+            <input id="password" type="password" required minlength="6" placeholder="At least 6 characters" class="w-full border border-slate-300 rounded-lg px-3 py-2">
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium mb-1" for="role">I am a</label>
+            <select id="role" class="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white">
+              <option value="client">Client (I want to hire)</option>
+              <option value="freelancer">Freelancer (I want work)</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+
+          <button id="submitBtn" type="submit" class="w-full bg-[#2B2D6E] hover:bg-[#23255a] text-white font-bold py-2.5 rounded-lg">Log in</button>
+          <p id="msg" class="text-sm text-center min-h-[1.25rem]"></p>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    let mode = 'login';
+    const tabLogin = document.getElementById('tabLogin');
+    const tabReg = document.getElementById('tabReg');
+    const nameBox = document.getElementById('nameBox');
+    const submitBtn = document.getElementById('submitBtn');
+    const msg = document.getElementById('msg');
+
+    function setMode(m) {
+      mode = m;
+      const isLogin = m === 'login';
+      nameBox.classList.toggle('hidden', isLogin);
+      submitBtn.textContent = isLogin ? 'Log in' : 'Create account';
+      tabLogin.className = 'flex-1 py-2 rounded-md font-medium text-sm ' + (isLogin ? 'tab-on' : 'text-slate-600');
+      tabReg.className = 'flex-1 py-2 rounded-md font-medium text-sm ' + (!isLogin ? 'tab-on' : 'text-slate-600');
+      msg.textContent = '';
+    }
+    tabLogin.onclick = () => setMode('login');
+    tabReg.onclick = () => setMode('register');
+
+   document.getElementById('authForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    name: document.getElementById('name').value,
+    email: document.getElementById('email').value,
+    password: document.getElementById('password').value,
+    role: document.getElementById('role').value
+  };
+  const url = mode === 'login' ? '/api/login' : '/api/register';
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      msg.className = 'text-sm text-center text-red-600';
+      msg.textContent = data.error;
+      return;
+    }
+    msg.className = 'text-sm text-center text-[#1F9D78]';
+    if (mode === 'login') {
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('name', data.name);
+      localStorage.setItem('role', data.role);
+      
+     window.location.href = data.role === 'admin' ? 'admin.html' : 'dashboard.html';
+    } else {
+      msg.textContent = data.message;
+      setMode('login');
+    }
+  } catch (err) {
+    msg.className = 'text-sm text-center text-red-600';
+    msg.textContent = 'Cannot reach the server. Is it running?';
+  }
+}); 
+  </script>
+</body>
+</html>

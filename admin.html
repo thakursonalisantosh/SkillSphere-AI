@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SkillSphere AI - Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <style>body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }</style>
+</head>
+<body class="min-h-screen bg-[#F4F6F9] text-slate-800">
+  <header class="bg-[#2B2D6E] text-white px-6 py-4 flex justify-between items-center">
+    <h1 class="font-extrabold text-xl">SkillSphere AI - Admin panel</h1>
+    <button onclick="logout()" class="bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg text-sm">Log out</button>
+  </header>
+
+  <main class="max-w-5xl mx-auto p-6 space-y-8">
+    <section>
+      <h2 class="font-bold text-lg mb-3">Overview</h2>
+      <div id="cards" class="grid grid-cols-2 md:grid-cols-3 gap-4"></div>
+    </section>
+
+    <section>
+      <h2 class="font-bold text-lg mb-3">All users</h2>
+      <div class="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-left">
+            <tr><th class="p-3">ID</th><th class="p-3">Name</th><th class="p-3">Email</th><th class="p-3">Role</th><th class="p-3">Trust score</th></tr>
+          </thead>
+          <tbody id="users"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="font-bold text-lg mb-3">All projects</h2>
+      <div class="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-left">
+            <tr><th class="p-3">ID</th><th class="p-3">Title</th><th class="p-3">Budget</th><th class="p-3">Status</th><th class="p-3">Client</th><th class="p-3">Freelancer</th></tr>
+          </thead>
+          <tbody id="projects"></tbody>
+        </table>
+      </div>
+    </section>
+  <section class="card">
+  <h2>Disputes & AI Mediation</h2>
+  <div id="adminDisputes">Loading disputes...</div>
+</section>
+  <section class="card">
+  <h2>Audit Logs</h2>
+  <div id="auditLogs">Loading logs...</div>
+</section>
+
+<section class="card">
+  <h2>Admin Charts</h2>
+  <div id="adminCharts">Loading charts...</div>
+</section>
+</main>
+
+  <script>
+    const token = localStorage.getItem('token');
+    if (!token || localStorage.getItem('role') !== 'admin') location.href = 'login.html';
+
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+    function logout() { localStorage.clear(); location.href = 'login.html'; }
+
+    async function get(url) {
+      const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+      if (res.status === 401 || res.status === 403) logout();
+      return res.json();
+    }
+
+    function card(title, value) {
+      return '<div class="bg-white border border-slate-200 rounded-xl p-5">' +
+             '<p class="text-sm text-slate-500">' + title + '</p>' +
+             '<p class="text-2xl font-extrabold text-[#2B2D6E] mt-1">' + value + '</p></div>';
+    }
+
+    async function load() {
+      const s = await get('/api/admin/summary');
+      document.getElementById('cards').innerHTML =
+        card('Total users', s.users) +
+        card('Total projects', s.projects) +
+        card('Total proposals', s.proposals) +
+        card('Total milestones', s.milestones) +
+        card('Held in escrow', '₹' + s.held) +
+        card('Released from escrow', '₹' + s.released);
+
+      const users = await get('/api/admin/users');
+      document.getElementById('users').innerHTML = users.map(u =>
+        '<tr class="border-t border-slate-200"><td class="p-3">' + u.user_id + '</td><td class="p-3">' + esc(u.name) +
+        '</td><td class="p-3">' + esc(u.email) + '</td><td class="p-3">' + esc(u.role) +
+        '</td><td class="p-3 font-bold">' + u.trust + '</td></tr>').join('');
+
+      const projects = await get('/api/admin/projects');
+      document.getElementById('projects').innerHTML = projects.map(p =>
+        '<tr class="border-t border-slate-200"><td class="p-3">' + p.project_id + '</td><td class="p-3">' + esc(p.title) +
+        '</td><td class="p-3">₹' + esc(p.budget) + '</td><td class="p-3">' + esc(p.status) +
+        '</td><td class="p-3">' + esc(p.client) + '</td><td class="p-3">' + esc(p.freelancer || '-') + '</td></tr>').join('');
+    }
+
+    load();
+ async function loadAdminDisputes() {
+  const token = localStorage.getItem('token');
+
+  const r = await fetch('/api/admin/disputes', {
+    headers: {
+      'Authorization': 'Bearer ' + token
+    }
+  });
+
+  const data = await r.json();
+  const box = document.getElementById('adminDisputes');
+
+  if (!Array.isArray(data) || data.length === 0) {
+    box.textContent = 'No disputes found.';
+    return;
+  }
+
+  box.innerHTML = data.map(d => `
+    <div class="card">
+      <h3>${d.title}</h3>
+      <p><strong>Raised by:</strong> ${d.raised_by_name}</p>
+      <p><strong>Reason:</strong> ${d.reason}</p>
+      <p><strong>Status:</strong> ${d.status}</p>
+      <p><strong>AI Summary:</strong> ${d.ai_summary || 'Not available'}</p>
+      <p><strong>AI Suggestion:</strong> ${d.ai_suggestion || 'Not available'}</p>
+      <button onclick="resolveDispute(${d.dispute_id}, 'release')">
+  Release Payment
+</button>
+
+<button onclick="resolveDispute(${d.dispute_id}, 'revision')">
+  Request Revision
+</button>
+    </div>
+  `).join('');
+}
+async function resolveDispute(id, action) {
+  const note = prompt('Enter admin note:') || '';
+
+  const token = localStorage.getItem('token');
+
+  const r = await fetch(`/api/admin/disputes/${id}/resolve`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token
+    },
+    body: JSON.stringify({ action, note })
+  });
+
+  const data = await r.json();
+
+  alert(data.message || data.error || '');
+
+  loadAdminDisputes();
+}
+loadAdminDisputes(); 
+  async function loadAuditLogs() {
+  const token = localStorage.getItem('token');
+
+  const r = await fetch('/api/admin/audit', {
+    headers: {
+      'Authorization': 'Bearer ' + token
+    }
+  });
+
+  const data = await r.json();
+  const box = document.getElementById('auditLogs');
+
+  if (!Array.isArray(data) || data.length === 0) {
+    box.textContent = 'No audit logs found.';
+    return;
+  }
+
+  box.innerHTML = data.map(log => `
+    <div style="padding:8px; border-bottom:1px solid #ddd;">
+      <strong>${log.who}</strong>
+      <p>Action: ${log.action}</p>
+      <p>${log.created_at}</p>
+    </div>
+  `).join('');
+}
+
+async function loadAdminCharts() {
+  const token = localStorage.getItem('token');
+
+  const r = await fetch('/api/admin/charts', {
+    headers: {
+      'Authorization': 'Bearer ' + token
+    }
+  });
+
+  const data = await r.json();
+  const box = document.getElementById('adminCharts');
+
+  box.innerHTML = `
+    <p><strong>Users by Role:</strong> ${JSON.stringify(data.roles || [])}</p>
+    <p><strong>Projects by Status:</strong> ${JSON.stringify(data.projects || [])}</p>
+    <p><strong>Milestones by Status:</strong> ${JSON.stringify(data.milestones || [])}</p>
+  `;
+}
+
+loadAuditLogs();
+loadAdminCharts();
+  </script>
+</body>
+</html>
